@@ -1,0 +1,109 @@
+{
+    "pluginAlias": "FujitsuHVAC",
+    "pluginType": "platform",
+    "singular": true,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "title": "Name",
+                "type": "string",
+                "required": true,
+                "default": "Fujitsu AC",
+                "description": "The name that will appear in the Home App and your homebridge log."
+            },
+            "username": {
+                "title": "Username",
+                "type": "string",
+                "required": true,
+                "default": "",
+                "description": "Username for FGLair account."
+            },
+            "password": {
+                "title": "Password",
+                "type": "string",
+                "required": true,
+                "default": "",
+                "description": "Password for FGLair account"
+            },
+            "region": {
+                "title": "Region",
+                "type": "string",
+                "default": "us",
+                "required": true,
+                "oneOf": [
+                    {
+                        "title": "U.S.",
+                        "const": "us"
+                    },
+                    {
+                        "title": "Europe",
+                        "const": "eu"
+                    },
+                    {
+                        "title": "China",
+                        "const": "cn"
+                    }
+                ],
+                "description": "Choose to U.S. if not in Europe nor China."
+            },
+            "offMode": {
+                "title": "Off mode",
+                "type": "string",
+                "required": false,
+                "default": "fan",
+                "oneOf": [
+                    {
+                        "title": "Fan",
+                        "const": "fan"
+                    },
+                    {
+                        "title": "Dry",
+                        "const": "dry"
+                    },
+                    {
+                        "title": "Off",
+                        "const": "off"
+                    }
+                ],
+                "description": "Mode to set when choosing \"Off\" in HomeKit"
+            },
+            "localIP": {
+                "title": "Local Server IP",
+                "type": "string",
+                "required": false,
+                "default": "",
+                "description": "Override default ip for setting up local control server."
+            },
+            "localPort": {
+                "title": "Local Server Port",
+                "type": "number",
+                "required": false,
+                "default": "",
+                "placeholder": "random port",
+                "description": "Set specific port for local control server."
+            },
+            "powerfulModeSwitch": {
+                "title": "Powerful Mode Switch",
+                "type": "boolean",
+                "required": false,
+                "default": false,
+                "description": "Add a switch for Powerful Mode."
+            },
+            "economyModeSwitch": {
+                "title": "Economy Mode Switch",
+                "type": "boolean",
+                "required": false,
+                "default": false,
+                "description": "Add a switch for Economy Mode"
+            },
+            "energySavingFanSwitch": {
+                "title": "Energy Saving Fan Switch",
+                "type": "boolean",
+                "required": false,
+                "default": false,
+                "description": "Add a switch for Energy Saving Fan"
+            }
+        }
+    }
+}
