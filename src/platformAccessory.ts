@@ -56,7 +56,7 @@ export class FujitsuHVACPlatformAccessory {
         this.device = accessory.context.device as Device;
         const capabilityValue = this.device.getValue<number>(PropertyKey.DeviceCapabilities);
         this.capabilities = new Capabilities(capabilityValue || 0);
-
+        this.platform.log.debug('Device Capabilities: ' + JSON.stringify(this.capabilities, null, 2));
         const localIP = this.config.localIP || this.getIP();
         if (!localIP) { throw 'Could not find homebridge IP address.'; }
 
@@ -138,7 +138,7 @@ export class FujitsuHVACPlatformAccessory {
 
             economyMode.getCharacteristic(this.platform.Characteristic.On)
                 .onGet(() => this.currentStates.economyMode)
-                .onSet(value => this.currentStates.economyMode = value as boolean);
+                .onSet((value: CharacteristicValue) => this.currentStates.economyMode = value as boolean);
             this.service.addLinkedService(economyMode);
         } else if (economyMode) {
             this.service.removeLinkedService(economyMode);
@@ -153,7 +153,7 @@ export class FujitsuHVACPlatformAccessory {
 
             powerfulMode.getCharacteristic(this.platform.Characteristic.On)
                 .onGet(() => this.currentStates.economyMode)
-                .onSet(value => this.currentStates.economyMode = value as boolean);
+                .onSet((value: CharacteristicValue) => this.currentStates.economyMode = value as boolean);
             this.service.addLinkedService(powerfulMode);
         } else if (powerfulMode) {
             this.service.removeLinkedService(powerfulMode);
@@ -166,7 +166,7 @@ export class FujitsuHVACPlatformAccessory {
             energySavingFan.setCharacteristic(this.platform.Characteristic.Name, 'Energy Saving Fan');
             energySavingFan.getCharacteristic(this.platform.Characteristic.On)
                 .onGet(() => this.currentStates.economyMode)
-                .onSet(value => this.currentStates.economyMode = value as boolean);
+                .onSet((value: CharacteristicValue) => this.currentStates.economyMode = value as boolean);
             this.service.addLinkedService(energySavingFan);
         } else if (energySavingFan) {
             this.service.removeLinkedService(energySavingFan);
@@ -178,7 +178,13 @@ export class FujitsuHVACPlatformAccessory {
         const lanIP = await this.platform.fglair.getLanIP(this.device);
         const address = await this.localServer.start(this.device.lan_ip ?? '', lanIP);
         this.platform.log.debug(`Started server on ${address}`);
-        await this.localServer.push();
+        try {
+            await this.localServer.push();
+        } catch (e) {
+            if (e instanceof Error) {
+                this.platform.log.error(e.message);
+            }
+        }
     }
 
     loadState() {
@@ -241,7 +247,7 @@ export class FujitsuHVACPlatformAccessory {
         this.currentStates.targetRotation = value as number;
         const speed: number = Math.round((value as number) / 33.33);
         if (this.currentStates.fanSpeedAuto) { return; }
-        console.log('Set fan speed: ' + speed);
+        this.platform.log.debug('Set fan speed: ' + speed);
         this.localServer.update(PropertyKey.FanSpeed, speed);
     }
 

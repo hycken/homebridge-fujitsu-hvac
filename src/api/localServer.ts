@@ -46,7 +46,6 @@ export class LocalServer {
     async httpHandler(request: http.IncomingMessage, response: http.ServerResponse) {
         if (!request.url) { return this.sendResponse(response, 404) }
         const body = (await this.getBody(request)).trim() || '{}';
-        // console.log(request.url);
 
         // Remove any get parameters 
         const path = request.url.split('?')[0];
@@ -175,7 +174,6 @@ export class LocalServer {
                 uri: '/local_lan'
             }
         });
-
         await new Promise<http.IncomingMessage>((resolve, reject) => {
             const request = http.request({
                 hostname: this.hostname,
