@@ -64,9 +64,6 @@ export class FGLAir {
         const bodyString = body !== undefined ? JSON.stringify(body) : undefined;
         const method = body !== undefined ? 'POST' : 'GET';
 
-        // if (bodyString) {
-        //     console.log(bodyString);
-        // }
         const result = await fetch(url, {
             method,
             headers: {
@@ -75,7 +72,6 @@ export class FGLAir {
             },
             body: bodyString
         });
-        //console.log(((new Date().getTime() - start.getTime()) / 1000) + 's: ' + path);
         return result;
     }
 
@@ -85,7 +81,7 @@ export class FGLAir {
         const body = await response?.json();
         const devices = body as DeviceResponse[];
 
-        if (devices.length == 0) { return [] }
+        if (!devices || devices.length == 0) { return []; }
 
         return devices
             .filter(d => d.device !== undefined)

@@ -28,7 +28,7 @@ export class PropertyUpdate {
                     base_type: 'integer',
                     name: key,
                     value: value,
-                    id: crypto.randomUUID().slice(0, 8)
+                    //id: crypto.randomUUID().slice(0, 8)
                 }
             }];
     }
@@ -68,7 +68,7 @@ export class KeySet {
         this.seed = this.buildKey(key, base + '2').slice(0, 16);
     }
     buildKey(key, message) {
-        const buff1 = Buffer.from(message, 'utf-8');
+        const buff1 = Buffer.from(message);
         const buff2 = Buffer.concat([HMAC.create(key, message), buff1]);
         return HMAC.create(key, buff2);
     }

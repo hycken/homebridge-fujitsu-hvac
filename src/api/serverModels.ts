@@ -1,5 +1,5 @@
 import crypto, { BinaryLike } from 'crypto'
-import { PropertyKey } from './models'
+import { PropertyKey } from './models.js'
 
 export class Datapoint {
     seq_no: number = 0
@@ -43,7 +43,7 @@ export class PropertyUpdate {
             base_type: 'integer' | 'string' | 'boolean',
             name: string,
             value: number | string | boolean,
-            id: string
+            // id: number | string
         }
     }[]
 
@@ -53,7 +53,7 @@ export class PropertyUpdate {
                 base_type: 'integer',
                 name: key,
                 value: value,
-                id: crypto.randomUUID().slice(0, 8)
+                //id: crypto.randomUUID().slice(0, 8)
             }
         }];
     }
@@ -96,14 +96,13 @@ export class KeySet {
     seed: Buffer
 
     constructor(key: string, base: string) {
-
         this.signKey = this.buildKey(key, base + '0');
         this.cryptoKey = this.buildKey(key, base + '1');
         this.seed = this.buildKey(key, base + '2').slice(0, 16);
     }
 
     private buildKey(key: string, message: string): Buffer {
-        const buff1 = Buffer.from(message, 'utf-8');
+        const buff1 = Buffer.from(message);
         const buff2 = Buffer.concat([HMAC.create(key, message), buff1]);
         return HMAC.create(key, buff2);
     }
@@ -149,6 +148,7 @@ export class KeyExchange {
     decrypt<T>(message: string): T | undefined {
         const body = JSON.parse(message) as EncodedBody;
         if (!body.enc) { return; }
+
         const decrypted = this.decrypter.update(body.enc, 'base64')
             .toString('utf8')
             .replace(/^\0+/, '')

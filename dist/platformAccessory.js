@@ -6,7 +6,7 @@ class CurrentState {
     targetTemperature = 20;
     targetHeatingState = 0;
     targetRotation = 0;
-    fanSpeedAuto = false;
+    fanSpeedAuto = 0;
     targetFanState = 0;
     filterState = 1;
     filterLife = 1;
@@ -42,11 +42,13 @@ export class FujitsuHVACPlatformAccessory {
     currentStates = new CurrentState();
     capabilities;
     config;
+    hasCurrentTemperature;
     constructor(platform, accessory) {
         this.platform = platform;
         this.accessory = accessory;
         this.config = this.platform.config;
         this.device = accessory.context.device;
+        this.hasCurrentTemperature = !(this.device.oem_model || '').startsWith('AP-WB');
         const capabilityValue = this.device.getValue(PropertyKey.DeviceCapabilities);
         this.capabilities = new Capabilities(capabilityValue || 0);
         this.platform.log.debug('Device Capabilities: ' + JSON.stringify(this.capabilities, null, 2));
@@ -54,7 +56,8 @@ export class FujitsuHVACPlatformAccessory {
         if (!localIP) {
             throw 'Could not find homebridge IP address.';
         }
-        this.localServer = new LocalServer(localIP, this.updateHandler.bind(this));
+        const defaultKey = this.hasCurrentTemperature ? PropertyKey.DisplayTemperature : PropertyKey.AdjustTemperature;
+        this.localServer = new LocalServer(localIP, this.platform.log, defaultKey, this.updateHandler.bind(this));
         this.accessory.getService(this.platform.Service.AccessoryInformation)
             ?.setCharacteristic(this.platform.Characteristic.Manufacturer, 'Fujitsu')
             .setCharacteristic(this.platform.Characteristic.Model, this.device.model ?? 'Default-Model')
@@ -63,7 +66,7 @@ export class FujitsuHVACPlatformAccessory {
         this.service = this.accessory.getService(this.platform.Service.Thermostat) || this.accessory.addService(this.platform.Service.Thermostat);
         const device_name = this.device.getValue('device_name') ?? this.device.product_name;
         this.service.setCharacteristic(this.platform.Characteristic.Name, device_name);
-        this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+        let temp = this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
             .onGet(async () => this.currentStates.currentTemperature);
         this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature)
             .setProps({ minStep: 0.5 })
@@ -81,6 +84,8 @@ export class FujitsuHVACPlatformAccessory {
             .setProps({ minStep: 33.333 })
             .onGet(async () => this.currentStates.targetRotation)
             .onSet(this.setRotationSpeed.bind(this));
+        this.fanService.getCharacteristic(this.platform.Characteristic.CurrentFanState)
+            .onGet(async () => 2);
         this.fanService.getCharacteristic(this.platform.Characteristic.TargetFanState)
             .onGet(async () => this.currentStates.targetFanState)
             .onSet(this.setTargetFanState.bind(this));
@@ -199,17 +204,24 @@ export class FujitsuHVACPlatformAccessory {
         }
     }
     toHomekitSpeed(fujitsuValue) {
-        return Math.round((fujitsuValue) * 33.33);
+        if (fujitsuValue == 4) {
+            return 0;
+        }
+        return Math.round((fujitsuValue) * 3333) / 100;
     }
     async setTargetTemperature(value) {
         this.currentStates.targetTemperature = value;
         this.localServer.update(PropertyKey.AdjustTemperature, this.currentStates.targetTemperature * 10);
+        if (this.hasCurrentTemperature) {
+            return;
+        }
+        this.currentStates.currentTemperature = value;
+        this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentStates.targetTemperature);
     }
     async setTargetHeatingCoolingState(value) {
         this.currentStates.targetHeatingState = value;
         const fujitsuValue = this.toFujitsuMode(value);
         this.localServer.update(PropertyKey.OperationMode, fujitsuValue);
-        // this.device.setProperty(this.platform.fglair, PropertyKey.OperationMode, fujitsuValue);
     }
     async setRotationSpeed(value) {
         this.currentStates.targetRotation = value;
@@ -217,7 +229,6 @@ export class FujitsuHVACPlatformAccessory {
         if (this.currentStates.fanSpeedAuto) {
             return;
         }
-        this.platform.log.debug('Set fan speed: ' + speed);
         this.localServer.update(PropertyKey.FanSpeed, speed);
     }
     async setTargetFanState(value) {
@@ -238,9 +249,6 @@ export class FujitsuHVACPlatformAccessory {
         if (!(typeof value === 'number')) {
             return;
         }
-        this.platform.log.debug(`${key}: ${value}`);
-        let targetSpeed;
-        let auto;
         const state = this.currentStates;
         switch (key) {
             case PropertyKey.DisplayTemperature:
@@ -250,21 +258,21 @@ export class FujitsuHVACPlatformAccessory {
             case PropertyKey.AdjustTemperature:
                 state.targetTemperature = value / 10;
                 this.service.updateCharacteristic(this.platform.Characteristic.TargetTemperature, state.targetTemperature);
+                if (!this.hasCurrentTemperature) {
+                    // The device doesn't support current temperature but it's not possible to hide it in homekit.
+                    state.currentTemperature = state.targetTemperature;
+                    this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, state.targetTemperature);
+                }
                 break;
             case PropertyKey.FanSpeed:
-                if (value !== FujitsuSpeed.auto) {
-                    targetSpeed = this.toHomekitSpeed(value);
-                    auto = false;
+                let auto = value === FujitsuSpeed.auto;
+                let fanStates = this.platform.Characteristic.TargetFanState;
+                this.currentStates.fanSpeedAuto = auto ? fanStates.AUTO : fanStates.MANUAL;
+                if (!auto) {
+                    this.currentStates.targetRotation = this.toHomekitSpeed(value);
                 }
-                else {
-                    const oldSpeed = this.currentStates.targetRotation;
-                    targetSpeed = oldSpeed ? oldSpeed : 0;
-                    auto = true;
-                }
-                this.currentStates.targetRotation = targetSpeed;
-                this.currentStates.fanSpeedAuto = auto;
-                this.fanService.updateCharacteristic(this.platform.Characteristic.RotationSpeed, targetSpeed);
-                this.fanService.updateCharacteristic(this.platform.Characteristic.TargetFanState, auto ? 1 : 0);
+                this.fanService.updateCharacteristic(this.platform.Characteristic.TargetFanState, this.currentStates.fanSpeedAuto);
+                this.fanService.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentStates.targetRotation);
                 break;
             case PropertyKey.OperationMode:
                 state.targetHeatingState = this.toHomeKitMode(value);

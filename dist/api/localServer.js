@@ -1,22 +1,25 @@
 import http from 'http';
-import { PropertyKey } from './models.js';
 import { KeyExchange, KeyRespone, Command, PropertyUpdate } from './serverModels.js';
 export class LocalServer {
+    localIP;
+    log;
+    fallbackKey;
     handler;
     server;
     port;
     hostname = '';
     lanip;
     keyExchange;
-    localIP;
     command = 0;
     requestNumber = 0;
     timer;
     valueCache = {};
     commandQueue = [];
-    constructor(localIP, handler) {
-        this.handler = handler;
+    constructor(localIP, log, fallbackKey, handler) {
         this.localIP = localIP;
+        this.log = log;
+        this.fallbackKey = fallbackKey;
+        this.handler = handler;
         this.server = http.createServer(this.httpHandler.bind(this));
     }
     async start(deviceIP, lanIP) {
@@ -33,7 +36,7 @@ export class LocalServer {
             });
         });
     }
-    async stop() {
+    stop() {
         clearInterval(this.timer);
     }
     async httpHandler(request, response) {
@@ -45,37 +48,38 @@ export class LocalServer {
         const path = request.url.split('?')[0];
         switch (path) {
             case '/local_lan/key_exchange.json':
-                const bodyJSON = JSON.parse(body);
-                return this.handleKeyExchange(response, bodyJSON);
+                return this.handleKeyExchange(response, body);
             case '/local_lan/commands.json':
-                const bodyJSON2 = JSON.parse(body);
-                return this.handleCommands(request.url, response, bodyJSON2);
+                return this.handleCommands(response);
             case '/local_lan/property/datapoint.json':
                 return this.handleDataPoint(response, body);
-            case '/local_lan/property/datapoint/ack.json':
-                return this.handleDataPoint(response, body);
+            case '/local_lan/time.json':
+                return this.handleTime(response, body);
             default:
-                console.log(`Unknown path: ${path}`);
+                this.log.warn(`Unhandled URL: ${request.url}`);
                 this.sendResponse(response, 404);
         }
     }
     handleKeyExchange(response, body) {
-        const keyRequest = body;
-        if (!this.lanip || !(keyRequest.key_exchange)) {
+        const bodyJSON = JSON.parse(body);
+        const keyRequest = bodyJSON;
+        if (!this.lanip || !keyRequest.key_exchange) {
             return this.sendResponse(response, 500);
         }
         const keyResponse = new KeyRespone();
         this.keyExchange = new KeyExchange(this.lanip.lanip_key, keyRequest.key_exchange, keyResponse);
-        clearInterval(this.timer);
         this.sendResponse(response, 200, keyResponse);
+        this.stop();
         this.timer = setInterval(() => { this.push(false); }, 30000);
     }
-    handleCommands(url, response, body) {
-        const pathKey = (/\?name=(.*)/.exec(url) ?? [])[1];
+    handleCommands(response) {
         let data;
+        if (!this.lanip || !this.keyExchange) {
+            return this.sendResponse(response, 500);
+        }
         const command = this.commandQueue.shift();
-        if (!command) { // Nothing enqueued, just ask for Display Temperature.
-            data = new Command(PropertyKey.DisplayTemperature);
+        if (!command) { // Nothing enqueued, ask for default key.
+            data = new Command(this.fallbackKey);
         }
         else { // Tell the other side the new value for property.
             data = new PropertyUpdate(command.key, command.value);
@@ -84,23 +88,45 @@ export class LocalServer {
             seq_no: this.requestNumber++,
             data: data
         };
-        const encryptedData = this.keyExchange?.encrypt(requestData);
+        const encryptedData = this.keyExchange.encrypt(requestData);
         this.sendResponse(response, 200, encryptedData);
     }
-    handleDataPoint(response, body) {
-        const point = this.keyExchange?.decrypt(body);
-        if (!('data' in point)) {
-            return this.sendResponse(response, 200);
-        }
+    handleTime(response, body) {
         this.sendResponse(response, 200);
-        if (this.valueCache[point.data.name] === point.data.value) {
-            return;
+        try {
+            const point = this.keyExchange?.decrypt(body);
+            if (!('data' in point)) {
+                return this.sendResponse(response, 200);
+            }
         }
-        this.valueCache[point.data.name] = point.data.value;
-        this.handler(point.data.name, point.data.value);
+        catch (error) {
+            if (!error || typeof error.message != 'string') {
+                return;
+            }
+            this.log.error(error.message);
+        }
     }
-    handleAck(response, body) {
-        console.log('ACK');
+    handleDataPoint(response, body) {
+        try {
+            const point = this.keyExchange?.decrypt(body);
+            if (!('data' in point)) {
+                return this.sendResponse(response, 200);
+            }
+            this.log.debug(`#${point.seq_no}: ${point.data.name}: ${point.data.value}`);
+            this.sendResponse(response, 200);
+            if (this.valueCache[point.data.name] === point.data.value) {
+                return;
+            }
+            this.valueCache[point.data.name] = point.data.value;
+            this.handler(point.data.name, point.data.value);
+        }
+        catch (error) {
+            this.sendResponse(response, 200);
+            if (!error || typeof error.message != 'string') {
+                return;
+            }
+            this.log.error(error.message);
+        }
     }
     async getBody(request) {
         return new Promise((resolve) => {
@@ -128,40 +154,14 @@ export class LocalServer {
         this.commandQueue.push({ key, value });
         this.push(true);
     }
-    async status() {
-        if (!this.port) {
-            return;
-        }
-        const method = !this.keyExchange ? 'POST' : 'PUT';
-        await new Promise((resolve, reject) => {
-            const request = http.request({
-                hostname: this.hostname,
-                port: 80,
-                path: '/local_reg.json',
-                method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Content-Length': 0
-                }
-            }, response => {
-                resolve(response);
-            });
-            request.on('error', err => {
-                reject(err);
-            });
-            request.write('');
-            request.end();
-        });
-    }
     async push(notify = false) {
         if (!this.port) {
             return;
         }
-        const method = !this.keyExchange ? 'POST' : 'PUT';
         const body = JSON.stringify({
             local_reg: {
                 ip: this.localIP,
-                notify: notify,
+                notify,
                 port: this.port,
                 uri: '/local_lan'
             }
@@ -171,19 +171,14 @@ export class LocalServer {
                 hostname: this.hostname,
                 port: 80,
                 path: '/local_reg.json',
-                method,
+                method: !this.keyExchange ? 'POST' : 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'Content-Length': body.length
                 }
-            }, response => {
-                resolve(response);
-            });
-            request.on('error', err => {
-                reject(err);
-            });
-            request.write(body);
-            request.end();
+            }, resolve);
+            request.on('error', reject);
+            request.end(body);
         });
     }
 }
