@@ -66,7 +66,7 @@ export class FujitsuHVACPlatformAccessory {
         this.service = this.accessory.getService(this.platform.Service.Thermostat) || this.accessory.addService(this.platform.Service.Thermostat);
         const device_name = this.device.getValue('device_name') ?? this.device.product_name;
         this.service.setCharacteristic(this.platform.Characteristic.Name, device_name);
-        let temp = this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+        this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
             .onGet(async () => this.currentStates.currentTemperature);
         this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature)
             .setProps({ minStep: 0.5 })
@@ -249,6 +249,8 @@ export class FujitsuHVACPlatformAccessory {
         if (!(typeof value === 'number')) {
             return;
         }
+        const fanAuto = value === FujitsuSpeed.auto;
+        const fanStates = this.platform.Characteristic.TargetFanState;
         const state = this.currentStates;
         switch (key) {
             case PropertyKey.DisplayTemperature:
@@ -265,10 +267,8 @@ export class FujitsuHVACPlatformAccessory {
                 }
                 break;
             case PropertyKey.FanSpeed:
-                let auto = value === FujitsuSpeed.auto;
-                let fanStates = this.platform.Characteristic.TargetFanState;
-                this.currentStates.fanSpeedAuto = auto ? fanStates.AUTO : fanStates.MANUAL;
-                if (!auto) {
+                this.currentStates.fanSpeedAuto = fanAuto ? fanStates.AUTO : fanStates.MANUAL;
+                if (!fanAuto) {
                     this.currentStates.targetRotation = this.toHomekitSpeed(value);
                 }
                 this.fanService.updateCharacteristic(this.platform.Characteristic.TargetFanState, this.currentStates.fanSpeedAuto);

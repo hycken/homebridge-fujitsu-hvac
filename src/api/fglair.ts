@@ -1,6 +1,10 @@
+import https from 'https';
+import { IncomingMessage, OutgoingHttpHeaders } from 'http'
 import { Region, Device, Property, Token, User, DeviceResponse, PropertyResponse, LanIP, LanIPResponse } from './models.js'
-import fetch, { Response } from 'node-fetch'
 
+interface Response extends IncomingMessage {
+    json: () => Object
+}
 
 export class FGLAir {
     region: Region
@@ -41,11 +45,9 @@ export class FGLAir {
         }
 
         const requestedAt = new Date();
-        const response = await fetch('https://' + this.region.authHostname + '/users/' + path, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user })
-        });
+        const response = await this.fetch(this.region.authHostname, '/users/' + path, 'POST', {
+            'Content-Type': 'application/json'
+        }, { user });
         let json = await response.json() as Token;
         if (!json.access_token) { return; }
 
@@ -64,15 +66,46 @@ export class FGLAir {
         const bodyString = body !== undefined ? JSON.stringify(body) : undefined;
         const method = body !== undefined ? 'POST' : 'GET';
 
-        const result = await fetch(url, {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'auth_token ' + token.access_token
-            },
-            body: bodyString
-        });
+        const result = await this.fetch(this.region.hostname, '/apiv1/' + path, method, {
+            'Authorization': 'auth_token ' + token.access_token
+        }, body);
         return result;
+    }
+
+    async fetch(hostname: string, path: string, method: string, headers: OutgoingHttpHeaders, body: Object | undefined = undefined): Promise<Response> {
+        return new Promise<Response>((resolve, reject) => {
+            let json: string
+            let allHeaders = Object.assign({}, headers, {
+                'Content-Type': 'application/json'
+            }) as OutgoingHttpHeaders;
+
+            if (body) {
+                json = JSON.stringify(body);
+                allHeaders = Object.assign(allHeaders, {
+                    'Content-Length': json.length
+                });
+            } else {
+                json = ''
+            }
+            const request = https.request({
+                hostname,
+                path,
+                method,
+                headers: allHeaders
+            }, r => {
+                let response = r as Response
+                let data = '';
+                response.json = async () => {
+                    return new Promise((resolve, reject) => {
+                        r.on('data', d => { data += d; });
+                        r.on('end', () => { resolve(JSON.parse(data)); });
+                    })
+                }
+                resolve(response);
+            });
+            request.on('error', reject);
+            request.end(json);
+        });
     }
 
 

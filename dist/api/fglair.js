@@ -1,5 +1,5 @@
+import https from 'https';
 import { Device } from './models.js';
-import fetch from 'node-fetch';
 export class FGLAir {
     region;
     user;
@@ -38,11 +38,9 @@ export class FGLAir {
             };
         }
         const requestedAt = new Date();
-        const response = await fetch('https://' + this.region.authHostname + '/users/' + path, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user })
-        });
+        const response = await this.fetch(this.region.authHostname, '/users/' + path, 'POST', {
+            'Content-Type': 'application/json'
+        }, { user });
         let json = await response.json();
         if (!json.access_token) {
             return;
@@ -60,15 +58,45 @@ export class FGLAir {
         }
         const bodyString = body !== undefined ? JSON.stringify(body) : undefined;
         const method = body !== undefined ? 'POST' : 'GET';
-        const result = await fetch(url, {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'auth_token ' + token.access_token
-            },
-            body: bodyString
-        });
+        const result = await this.fetch(this.region.hostname, '/apiv1/' + path, method, {
+            'Authorization': 'auth_token ' + token.access_token
+        }, body);
         return result;
+    }
+    async fetch(hostname, path, method, headers, body = undefined) {
+        return new Promise((resolve, reject) => {
+            let json;
+            let allHeaders = Object.assign({}, headers, {
+                'Content-Type': 'application/json'
+            });
+            if (body) {
+                json = JSON.stringify(body);
+                allHeaders = Object.assign(allHeaders, {
+                    'Content-Length': json.length
+                });
+            }
+            else {
+                json = '';
+            }
+            const request = https.request({
+                hostname,
+                path,
+                method,
+                headers: allHeaders
+            }, r => {
+                let response = r;
+                let data = '';
+                response.json = async () => {
+                    return new Promise((resolve, reject) => {
+                        r.on('data', d => { data += d; });
+                        r.on('end', () => { resolve(JSON.parse(data)); });
+                    });
+                };
+                resolve(response);
+            });
+            request.on('error', reject);
+            request.end(json);
+        });
     }
     async getDevices() {
         const response = await this.request('devices.json');
