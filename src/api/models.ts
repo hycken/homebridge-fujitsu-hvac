@@ -55,64 +55,64 @@ export class Capabilities {
 }
 
 export class OpStatus {
-    allOperation: number
-    timerOperation: number
-    settingTemperatureOperation: number
-    operationMode: number
-    operationStartStop: number
-    operationStart: number
-    filterSignReset: number
-    operation: number
-    settingTemperature: number
+    allOperation: boolean
+    timerOperation: boolean
+    settingTemperatureOperation: boolean
+    operationMode: boolean
+    operationStartStop: boolean
+    operationStart: boolean
+    filterSignReset: boolean
+    operation: boolean
+    settingTemperature: boolean
     currentOperationMode: {
-        auto: number
-        cool: number
-        dry: number
-        heat: number
-        fan: number
+        auto: boolean
+        cool: boolean
+        dry: boolean
+        heat: boolean
+        fan: boolean
     }
-    level1AirConditioningOperation: number
-    level1OperationStartStop: number
-    level2AirConditioningOperation: number
-    level2_timer_operation: number
-    level2LocalSettingOperation: number
-    defrostOrOilRecoveryOrDifferentMode: number
-    maintenance: number
-    defrost: number
-    differentMode: number
-    pilRecovery: number
-    pumpDown: number
-    checkOperation: number
+    level1AirConditioningOperation: boolean
+    level1OperationStartStop: boolean
+    level2AirConditioningOperation: boolean
+    level2_timer_operation: boolean
+    level2LocalSettingOperation: boolean
+    defrostOrOilRecoveryOrDifferentMode: boolean
+    maintenance: boolean
+    defrost: boolean
+    differentMode: boolean
+    pilRecovery: boolean
+    pumpDown: boolean
+    checkOperation: boolean
 
     constructor(opStatus: number) {
-        this.allOperation = 1 << 0 & opStatus;
-        this.timerOperation = 1 << 1 & opStatus;
-        this.settingTemperatureOperation = 1 << 2 & opStatus;
-        this.operationMode = 1 << 3 & opStatus;
-        this.operationStartStop = 1 << 4 & opStatus;
-        this.operationStart = 1 << 5 & opStatus;
-        this.filterSignReset = 1 << 6 & opStatus;
-        this.operation = 1 << 7 & opStatus;
-        this.settingTemperature = 1 << 8 & opStatus;
+        this.allOperation = (1 << 0 & opStatus) !== 0;
+        this.timerOperation = (1 << 1 & opStatus) !== 0;
+        this.settingTemperatureOperation = (1 << 2 & opStatus) !== 0;
+        this.operationMode = (1 << 3 & opStatus) !== 0;
+        this.operationStartStop = (1 << 4 & opStatus) !== 0;
+        this.operationStart = (1 << 5 & opStatus) !== 0;
+        this.filterSignReset = (1 << 6 & opStatus) !== 0;
+        this.operation = (1 << 7 & opStatus) !== 0;
+        this.settingTemperature = (1 << 8 & opStatus) !== 0;
         this.currentOperationMode = {
-            auto: 1 << 9 & opStatus,
-            cool: 1 << 10 & opStatus,
-            dry: 1 << 11 & opStatus,
-            heat: 1 << 12 & opStatus,
-            fan: 1 << 13 & opStatus
+            auto: (1 << 9 & opStatus) !== 0,
+            cool: (1 << 10 & opStatus) !== 0,
+            dry: (1 << 11 & opStatus) !== 0,
+            heat: (1 << 12 & opStatus) !== 0,
+            fan: (1 << 13 & opStatus) !== 0
         }
-        this.level1AirConditioningOperation = 1 << 14 & opStatus;
-        this.level1OperationStartStop = 1 << 15 & opStatus;
-        this.level2AirConditioningOperation = 1 << 16 & opStatus;
-        this.level2_timer_operation = 1 << 17 & opStatus;
-        this.level2LocalSettingOperation = 1 << 18 & opStatus;
-        this.defrostOrOilRecoveryOrDifferentMode = 1 << 21 & opStatus;
-        this.maintenance = 1 << 22 & opStatus;
-        this.defrost = 1 << 24 & opStatus;
-        this.differentMode = 1 << 25 & opStatus;
-        this.pilRecovery = 1 << 28 & opStatus;
-        this.pumpDown = 1 << 29 & opStatus;
-        this.checkOperation = 1 << 30 & opStatus;
+        this.level1AirConditioningOperation = (1 << 14 & opStatus) !== 0;
+        this.level1OperationStartStop = (1 << 15 & opStatus) !== 0;
+        this.level2AirConditioningOperation = (1 << 16 & opStatus) !== 0;
+        this.level2_timer_operation = (1 << 17 & opStatus) !== 0;
+        this.level2LocalSettingOperation = (1 << 18 & opStatus) !== 0;
+        this.defrostOrOilRecoveryOrDifferentMode = (1 << 21 & opStatus) !== 0;
+        this.maintenance = (1 << 22 & opStatus) !== 0;
+        this.defrost = (1 << 24 & opStatus) !== 0;
+        this.differentMode = (1 << 25 & opStatus) !== 0;
+        this.pilRecovery = (1 << 28 & opStatus) !== 0;
+        this.pumpDown = (1 << 29 & opStatus) !== 0;
+        this.checkOperation = (1 << 30 & opStatus) !== 0;
     }
 }
 

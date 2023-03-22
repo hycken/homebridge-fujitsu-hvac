@@ -1,18 +1,18 @@
 import { networkInterfaces } from 'os';
-import { PropertyKey, Capabilities } from './api/models.js';
+import { PropertyKey, Capabilities, OpStatus } from './api/models.js';
 import { LocalServer } from './api/localServer.js';
 class CurrentState {
     currentTemperature = 20;
     targetTemperature = 20;
     targetHeatingState = 0;
     targetRotation = 0;
-    fanSpeedAuto = 0;
+    fanSpeedAuto = 1;
     targetFanState = 0;
-    filterState = 1;
-    filterLife = 1;
+    filterState = 0;
+    filterLife = 100;
     swinging = false;
     economyMode = false;
-    opStatus = 0;
+    opStatus = new OpStatus(0);
 }
 var FujitsuOperationMode;
 (function (FujitsuOperationMode) {
@@ -34,6 +34,7 @@ var FujitsuSpeed;
 export class FujitsuHVACPlatformAccessory {
     platform;
     accessory;
+    reload;
     service;
     fanService;
     filterService;
@@ -43,28 +44,31 @@ export class FujitsuHVACPlatformAccessory {
     capabilities;
     config;
     hasCurrentTemperature;
-    constructor(platform, accessory) {
+    constructor(platform, accessory, reload) {
         this.platform = platform;
         this.accessory = accessory;
+        this.reload = reload;
         this.config = this.platform.config;
         this.device = accessory.context.device;
         this.hasCurrentTemperature = !(this.device.oem_model || '').startsWith('AP-WB');
         const capabilityValue = this.device.getValue(PropertyKey.DeviceCapabilities);
         this.capabilities = new Capabilities(capabilityValue || 0);
+        this.loadState();
         this.platform.log.debug('Device Capabilities: ' + JSON.stringify(this.capabilities, null, 2));
-        const localIP = this.config.localIP || this.getIP();
+        const localIP = this.config.localIP || this.getIP(this.device.lan_ip || '');
         if (!localIP) {
             throw 'Could not find homebridge IP address.';
         }
         const defaultKey = this.hasCurrentTemperature ? PropertyKey.DisplayTemperature : PropertyKey.AdjustTemperature;
-        this.localServer = new LocalServer(localIP, this.platform.log, defaultKey, this.updateHandler.bind(this));
+        this.localServer = new LocalServer(localIP, this.platform.log, defaultKey, this.updateHandler.bind(this), this.errorHandler.bind(this));
+        const device_name = this.device.getValue('device_name') ?? this.device.product_name;
         this.accessory.getService(this.platform.Service.AccessoryInformation)
             ?.setCharacteristic(this.platform.Characteristic.Manufacturer, 'Fujitsu')
             .setCharacteristic(this.platform.Characteristic.Model, this.device.model ?? 'Default-Model')
             .setCharacteristic(this.platform.Characteristic.SerialNumber, this.device.dsn ?? 'Default-Serial')
             .setCharacteristic(this.platform.Characteristic.FirmwareRevision, this.device.sw_version ?? '-');
+        // Thermostat service
         this.service = this.accessory.getService(this.platform.Service.Thermostat) || this.accessory.addService(this.platform.Service.Thermostat);
-        const device_name = this.device.getValue('device_name') ?? this.device.product_name;
         this.service.setCharacteristic(this.platform.Characteristic.Name, device_name);
         this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
             .onGet(async () => this.currentStates.currentTemperature);
@@ -73,7 +77,7 @@ export class FujitsuHVACPlatformAccessory {
             .onGet(async () => this.currentStates.targetTemperature)
             .onSet(this.setTargetTemperature.bind(this));
         this.service.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState)
-            .onGet(async () => this.currentStates.targetHeatingState);
+            .onGet(this.getCurrentState.bind(this));
         this.service.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState)
             .onGet(async () => this.currentStates.targetHeatingState)
             .onSet(this.setTargetHeatingCoolingState.bind(this));
@@ -85,7 +89,7 @@ export class FujitsuHVACPlatformAccessory {
             .onGet(async () => this.currentStates.targetRotation)
             .onSet(this.setRotationSpeed.bind(this));
         this.fanService.getCharacteristic(this.platform.Characteristic.CurrentFanState)
-            .onGet(async () => 2);
+            .onGet(async () => this.platform.Characteristic.CurrentFanState.BLOWING_AIR);
         this.fanService.getCharacteristic(this.platform.Characteristic.TargetFanState)
             .onGet(async () => this.currentStates.targetFanState)
             .onSet(this.setTargetFanState.bind(this));
@@ -99,16 +103,15 @@ export class FujitsuHVACPlatformAccessory {
             .onSet(() => { return; });
         this.service.addLinkedService(this.filterService);
         this.addOptionalCharacteristics();
-        this.loadState();
         this.startLocalServer();
     }
     addOptionalCharacteristics() {
         if (this.capabilities.swing.horizontal || this.capabilities.swing.vertical) {
-            this.fanService.getCharacteristic(this.platform.Characteristic.SwingMode)
+            this.fanService?.getCharacteristic(this.platform.Characteristic.SwingMode)
                 .onGet(() => this.currentStates.swinging)
                 .onSet(this.setSwingMode.bind(this));
         }
-        else if (this.fanService.testCharacteristic(this.platform.Characteristic.SwingMode)) {
+        else if (this.fanService?.testCharacteristic(this.platform.Characteristic.SwingMode)) {
             const c = this.fanService.getCharacteristic(this.platform.Characteristic.SwingMode)
                 .removeAllListeners();
             this.fanService.removeCharacteristic(c);
@@ -120,10 +123,10 @@ export class FujitsuHVACPlatformAccessory {
             economyMode.getCharacteristic(this.platform.Characteristic.On)
                 .onGet(() => this.currentStates.economyMode)
                 .onSet((value) => this.currentStates.economyMode = value);
-            this.service.addLinkedService(economyMode);
+            this.service?.addLinkedService(economyMode);
         }
         else if (economyMode) {
-            this.service.removeLinkedService(economyMode);
+            this.service?.removeLinkedService(economyMode);
             this.accessory.removeService(economyMode);
         }
         let powerfulMode = this.accessory.getService('Powerful Mode');
@@ -133,10 +136,10 @@ export class FujitsuHVACPlatformAccessory {
             powerfulMode.getCharacteristic(this.platform.Characteristic.On)
                 .onGet(() => this.currentStates.economyMode)
                 .onSet((value) => this.currentStates.economyMode = value);
-            this.service.addLinkedService(powerfulMode);
+            this.service?.addLinkedService(powerfulMode);
         }
         else if (powerfulMode) {
-            this.service.removeLinkedService(powerfulMode);
+            this.service?.removeLinkedService(powerfulMode);
             this.accessory.removeService(powerfulMode);
         }
         let energySavingFan = this.accessory.getService('Energy Saving Fan');
@@ -146,10 +149,10 @@ export class FujitsuHVACPlatformAccessory {
             energySavingFan.getCharacteristic(this.platform.Characteristic.On)
                 .onGet(() => this.currentStates.economyMode)
                 .onSet((value) => this.currentStates.economyMode = value);
-            this.service.addLinkedService(energySavingFan);
+            this.service?.addLinkedService(energySavingFan);
         }
         else if (energySavingFan) {
-            this.service.removeLinkedService(energySavingFan);
+            this.service?.removeLinkedService(energySavingFan);
             this.accessory.removeService(energySavingFan);
         }
     }
@@ -158,7 +161,7 @@ export class FujitsuHVACPlatformAccessory {
         const address = await this.localServer.start(this.device.lan_ip ?? '', lanIP);
         this.platform.log.debug(`Started server on ${address}`);
         try {
-            await this.localServer.push();
+            await this.localServer.push(false);
         }
         catch (e) {
             if (e instanceof Error) {
@@ -209,14 +212,47 @@ export class FujitsuHVACPlatformAccessory {
         }
         return Math.round((fujitsuValue) * 3333) / 100;
     }
+    async getCurrentState() {
+        const targetModes = this.platform.Characteristic.TargetHeatingCoolingState;
+        const currentModes = this.platform.Characteristic.CurrentHeatingCoolingState;
+        const targetMode = this.currentStates.targetHeatingState;
+        if (targetMode === targetModes.OFF) {
+            return currentModes.OFF;
+        }
+        // Not much we can do if we can't compare current and target temps.
+        if (!this.hasCurrentTemperature) {
+            switch (this.currentStates.targetHeatingState) {
+                case targetModes.COOL: return currentModes.COOL;
+                case targetModes.HEAT: return currentModes.HEAT;
+                default: return currentModes.OFF;
+            }
+        }
+        const temperature = this.hasCurrentTemperature ? this.currentStates.currentTemperature : this.currentStates.targetTemperature;
+        const diff = this.currentStates.targetTemperature - temperature;
+        const canHeat = targetMode === targetModes.HEAT || targetMode === targetModes.AUTO;
+        const canCool = targetMode === targetModes.COOL || targetMode === targetModes.AUTO;
+        if (diff > 0.5 && canHeat) {
+            return currentModes.HEAT;
+        }
+        else if (diff < -0.5 && canCool) {
+            return currentModes.COOL;
+        }
+        else {
+            return currentModes.OFF;
+        }
+    }
+    async updateHCState() {
+        const currentState = await this.getCurrentState();
+        this.service?.updateCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState, currentState);
+    }
     async setTargetTemperature(value) {
         this.currentStates.targetTemperature = value;
         this.localServer.update(PropertyKey.AdjustTemperature, this.currentStates.targetTemperature * 10);
         if (this.hasCurrentTemperature) {
-            return;
+            return this.updateHCState();
         }
         this.currentStates.currentTemperature = value;
-        this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentStates.targetTemperature);
+        this.service?.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentStates.targetTemperature);
     }
     async setTargetHeatingCoolingState(value) {
         this.currentStates.targetHeatingState = value;
@@ -245,68 +281,89 @@ export class FujitsuHVACPlatformAccessory {
             this.localServer.update(PropertyKey.VerticalSwing, value);
         }
     }
-    updateHandler(key, value) {
-        if (!(typeof value === 'number')) {
+    errorHandler(error) {
+        this.platform.log.debug(error.message);
+        this.localServer.stop();
+        this.reload();
+    }
+    async updateHandler(key, value) {
+        if (typeof value !== 'number') {
             return;
         }
-        const fanAuto = value === FujitsuSpeed.auto;
+        let fanAuto;
         const fanStates = this.platform.Characteristic.TargetFanState;
         const state = this.currentStates;
         switch (key) {
             case PropertyKey.DisplayTemperature:
                 state.currentTemperature = (value - 5000) / 100;
-                this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, state.currentTemperature);
-                break;
+                this.service?.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, state.currentTemperature);
+                return await this.updateHCState();
             case PropertyKey.AdjustTemperature:
                 state.targetTemperature = value / 10;
-                this.service.updateCharacteristic(this.platform.Characteristic.TargetTemperature, state.targetTemperature);
-                if (!this.hasCurrentTemperature) {
-                    // The device doesn't support current temperature but it's not possible to hide it in homekit.
-                    state.currentTemperature = state.targetTemperature;
-                    this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, state.targetTemperature);
+                this.service?.updateCharacteristic(this.platform.Characteristic.TargetTemperature, state.targetTemperature);
+                if (this.hasCurrentTemperature) {
+                    return await this.updateHCState();
                 }
-                break;
+                // The device doesn't support current temperature but it's not possible to hide it in homekit.
+                state.currentTemperature = state.targetTemperature;
+                this.service?.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, state.targetTemperature);
+                return await this.updateHCState();
             case PropertyKey.FanSpeed:
+                fanAuto = value === FujitsuSpeed.auto;
                 this.currentStates.fanSpeedAuto = fanAuto ? fanStates.AUTO : fanStates.MANUAL;
                 if (!fanAuto) {
                     this.currentStates.targetRotation = this.toHomekitSpeed(value);
                 }
-                this.fanService.updateCharacteristic(this.platform.Characteristic.TargetFanState, this.currentStates.fanSpeedAuto);
-                this.fanService.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentStates.targetRotation);
+                this.fanService?.updateCharacteristic(this.platform.Characteristic.TargetFanState, this.currentStates.fanSpeedAuto);
+                this.fanService?.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentStates.targetRotation);
                 break;
             case PropertyKey.OperationMode:
                 state.targetHeatingState = this.toHomeKitMode(value);
-                this.service.updateCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState, state.targetHeatingState);
+                this.service?.updateCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState, state.targetHeatingState);
                 break;
             case PropertyKey.HorizontalSwing:
                 if (!this.capabilities.swing.horizontal) {
                     break;
                 }
                 this.currentStates.swinging = value == 1;
-                this.service.updateCharacteristic(this.platform.Characteristic.SwingMode, value);
+                this.service?.updateCharacteristic(this.platform.Characteristic.SwingMode, value);
                 break;
             case PropertyKey.VerticalSwing:
                 if (!this.capabilities.swing.vertical) {
                     break;
                 }
                 this.currentStates.swinging = value == 1;
-                this.service.updateCharacteristic(this.platform.Characteristic.SwingMode, value);
+                this.service?.updateCharacteristic(this.platform.Characteristic.SwingMode, value);
                 break;
             case PropertyKey.OpStatus:
-                this.currentStates.opStatus = value;
+                this.currentStates.opStatus = new OpStatus(value);
+                this.platform.log.debug('Op Status: ' + value);
+                this.platform.log.debug(JSON.stringify(this.currentStates.opStatus, undefined, 2));
                 break;
         }
     }
-    getIP() {
+    getIP(deviceIP) {
         const interfaces = networkInterfaces();
-        for (const net of Object.values(interfaces)) {
+        let allLocal = Object.values(interfaces).flatMap(net => {
+            let results = [];
             for (const info of (net ?? [])) {
-                if (info.family !== 'IPv4' || info.internal !== false) {
+                if (info.family !== 'IPv4' || info.internal) {
                     continue;
                 }
-                return info.address;
+                results.push(info.address);
             }
-        }
-        return;
+            return results;
+        });
+        let subnet = deviceIP.replace(/^((?:\d+\.){3})(\d+)/, '$1');
+        allLocal.sort((a, b) => {
+            if (a.startsWith(subnet)) {
+                return -1;
+            }
+            if (b.startsWith(subnet)) {
+                return 1;
+            }
+            return 0;
+        });
+        return allLocal[0];
     }
 }

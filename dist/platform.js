@@ -32,23 +32,31 @@ export class FujitsuHVACPlatform {
     }
     async discoverDevices() {
         const devices = await this.fglair.getDevices();
+        let addedUUIDs = [];
         for (const device of devices) {
             this.log.debug('Device Info: ' + JSON.stringify(device, undefined, 2));
             const uuid = this.api.hap.uuid.generate(device.dsn);
             await device.updateAllProperties(this.fglair);
             this.log.debug('Properties: ' + Object.keys(device.properties).join(', '));
             const device_name = device.getValue('device_name');
+            addedUUIDs.push(uuid);
             const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
             if (existingAccessory) {
                 existingAccessory.context.device = device;
-                new FujitsuHVACPlatformAccessory(this, existingAccessory);
+                new FujitsuHVACPlatformAccessory(this, existingAccessory, this.reload);
             }
             else {
                 const accessory = new this.api.platformAccessory(device_name ?? device.product_name ?? 'Fujitsu', uuid);
                 accessory.context.device = device;
-                new FujitsuHVACPlatformAccessory(this, accessory);
+                new FujitsuHVACPlatformAccessory(this, accessory, this.reload);
                 this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
             }
         }
+        const removedAccessories = this.accessories.filter(accessory => !addedUUIDs.includes(accessory.UUID));
+        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, removedAccessories);
+    }
+    reload() {
+        this.log.info("Lost connection to accessory. Rediscovering...");
+        this.discoverDevices();
     }
 }

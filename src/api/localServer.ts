@@ -28,7 +28,9 @@ export class LocalServer {
         private localIP: string,
         private log: ILogger,
         private fallbackKey: PropertyKey,
-        private handler: (key: PropertyKey, value: string | number | boolean) => void) {
+        private handler: (key: PropertyKey, value: string | number | boolean) => void,
+        private errorHandler: (error: Error) => void
+    ) {
         this.server = http.createServer(this.httpHandler.bind(this));
     }
 
@@ -78,12 +80,19 @@ export class LocalServer {
         if (!this.lanip || !keyRequest.key_exchange) {
             return this.sendResponse(response, 500);
         }
-
+        const keepAlive = (this.lanip.keep_alive || 30) - 1;
         const keyResponse = new KeyRespone();
         this.keyExchange = new KeyExchange(this.lanip.lanip_key, keyRequest.key_exchange, keyResponse);
         this.sendResponse(response, 200, keyResponse);
         this.stop();
-        this.timer = setInterval(() => { this.push(false); }, 30000);
+        this.timer = setInterval(async () => {
+            try {
+                await this.push(false);
+            } catch (error) {
+                if (!(error instanceof Error)) { return; }
+                this.errorHandler(error);
+            }
+        }, keepAlive * 1000);
     }
 
     handleCommands(response: http.ServerResponse) {
@@ -157,10 +166,15 @@ export class LocalServer {
     async update(key: PropertyKey, value: number | string | boolean) {
         this.valueCache[key] = value;
         this.commandQueue.push({ key, value });
-        this.push(true);
+        try {
+            await this.push(true);
+        } catch (error) {
+            if (!(error instanceof Error)) { return; }
+            this.errorHandler(error);
+        }
     }
 
-    async push(notify = false) {
+    async push(notify: boolean): Promise<http.IncomingMessage | undefined> {
         if (!this.port) { return; }
         const body = JSON.stringify({
             local_reg: {
@@ -171,7 +185,7 @@ export class LocalServer {
             }
         });
 
-        await new Promise<http.IncomingMessage>((resolve, reject) => {
+        return new Promise<http.IncomingMessage>((resolve, reject) => {
             const request = http.request({
                 hostname: this.hostname,
                 port: 80,
@@ -181,7 +195,16 @@ export class LocalServer {
                     'Content-Type': 'application/json',
                     'Content-Length': body.length
                 }
-            }, resolve);
+            }, response => {
+                const statusCode = response.statusCode || 0;
+                if (Math.floor(statusCode / 100) === 2) { resolve(response); }
+
+                if (this.keyExchange) {
+                    reject(new Error('Local update request failed.'));
+                } else {
+                    reject(new Error('Failed to register local connection.'));
+                }
+            });
             request.on('error', reject);
             request.end(body);
         });
