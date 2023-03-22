@@ -376,15 +376,15 @@ export class FujitsuHVACPlatformAccessory {
 
     getIP(deviceIP: string): string | undefined {
         const interfaces = networkInterfaces()
-        let allLocal: string[] = Object.values(interfaces).flatMap(net => {
-            let results: string[] = [];
+        const allLocal: string[] = Object.values(interfaces).flatMap(net => {
+            const results: string[] = [];
             for (const info of (net ?? [])) {
                 if (info.family !== 'IPv4' || info.internal) { continue; }
                 results.push(info.address);
             }
             return results;
         });
-        let subnet = deviceIP.replace(/^((?:\d+\.){3})(\d+)/, '$1');
+        const subnet = deviceIP.replace(/^((?:\d+\.){3})(\d+)/, '$1');
         allLocal.sort((a, b) => {
             if (a.startsWith(subnet)) { return -1; }
             if (b.startsWith(subnet)) { return 1; }

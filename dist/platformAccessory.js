@@ -344,8 +344,8 @@ export class FujitsuHVACPlatformAccessory {
     }
     getIP(deviceIP) {
         const interfaces = networkInterfaces();
-        let allLocal = Object.values(interfaces).flatMap(net => {
-            let results = [];
+        const allLocal = Object.values(interfaces).flatMap(net => {
+            const results = [];
             for (const info of (net ?? [])) {
                 if (info.family !== 'IPv4' || info.internal) {
                     continue;
@@ -354,7 +354,7 @@ export class FujitsuHVACPlatformAccessory {
             }
             return results;
         });
-        let subnet = deviceIP.replace(/^((?:\d+\.){3})(\d+)/, '$1');
+        const subnet = deviceIP.replace(/^((?:\d+\.){3})(\d+)/, '$1');
         allLocal.sort((a, b) => {
             if (a.startsWith(subnet)) {
                 return -1;

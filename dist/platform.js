@@ -32,7 +32,7 @@ export class FujitsuHVACPlatform {
     }
     async discoverDevices() {
         const devices = await this.fglair.getDevices();
-        let addedUUIDs = [];
+        const addedUUIDs = [];
         for (const device of devices) {
             this.log.debug('Device Info: ' + JSON.stringify(device, undefined, 2));
             const uuid = this.api.hap.uuid.generate(device.dsn);
