@@ -43,12 +43,12 @@ export class FujitsuHVACPlatform {
             const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
             if (existingAccessory) {
                 existingAccessory.context.device = device;
-                new FujitsuHVACPlatformAccessory(this, existingAccessory, this.reload);
+                new FujitsuHVACPlatformAccessory(this, existingAccessory, this.reload.bind(this));
             }
             else {
                 const accessory = new this.api.platformAccessory(device_name ?? device.product_name ?? 'Fujitsu', uuid);
                 accessory.context.device = device;
-                new FujitsuHVACPlatformAccessory(this, accessory, this.reload);
+                new FujitsuHVACPlatformAccessory(this, accessory, this.reload.bind(this));
                 this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
             }
         }

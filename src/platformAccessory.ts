@@ -195,9 +195,8 @@ export class FujitsuHVACPlatformAccessory {
         try {
             await this.localServer.push(false);
         } catch (e) {
-            if (e instanceof Error) {
-                this.platform.log.error(e.message);
-            }
+            if (!(e instanceof Error)) { return; }
+            this.errorHandler(e);
         }
     }
 
