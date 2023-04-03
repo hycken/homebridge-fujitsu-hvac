@@ -3,7 +3,7 @@
   "type": "module",
   "displayName": "Homebridgee Fujitsu HVAC",
   "name": "homebridge-fujitsu-hvac",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Plugin for Fujistu heat pumps and mini splits supported by FGLAir.",
   "license": "MIT",
   "repository": {

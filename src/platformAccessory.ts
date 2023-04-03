@@ -41,7 +41,7 @@ export class FujitsuHVACPlatformAccessory {
     private fanService?: Service;
     private filterService?: Service;
 
-    private localServer: LocalServer;
+    private localServer?: LocalServer;
 
     private device: Device;
     private currentStates = new CurrentState();
@@ -51,8 +51,7 @@ export class FujitsuHVACPlatformAccessory {
 
     constructor(
         private readonly platform: FujitsuHVACPlatform,
-        private readonly accessory: PlatformAccessory,
-        private readonly reload: () => void
+        private readonly accessory: PlatformAccessory
     ) {
         this.config = this.platform.config as FujitsuHVACPlatformConfig
         this.device = accessory.context.device as Device;
@@ -62,15 +61,6 @@ export class FujitsuHVACPlatformAccessory {
         this.loadState();
 
         this.platform.log.debug('Device Capabilities: ' + JSON.stringify(this.capabilities, null, 2));
-        const localIP = this.config.localIP || this.getIP(this.device.lan_ip || '');
-        if (!localIP) { throw 'Could not find homebridge IP address.'; }
-        const defaultKey = this.hasCurrentTemperature ? PropertyKey.DisplayTemperature : PropertyKey.AdjustTemperature;
-        this.localServer = new LocalServer(localIP,
-            this.platform.log,
-            defaultKey,
-            this.updateHandler.bind(this),
-            this.errorHandler.bind(this)
-        );
         const device_name: string | undefined = this.device.getValue('device_name') ?? this.device.product_name;
 
         this.accessory.getService(this.platform.Service.AccessoryInformation)
@@ -189,14 +179,30 @@ export class FujitsuHVACPlatformAccessory {
     }
 
     async startLocalServer() {
-        const lanIP = await this.platform.fglair.getLanIP(this.device);
-        const address = await this.localServer.start(this.device.lan_ip ?? '', lanIP);
-        this.platform.log.debug(`Started server on ${address}`);
         try {
-            await this.localServer.push(false);
-        } catch (e) {
-            if (!(e instanceof Error)) { return; }
-            this.errorHandler(e);
+            if (this.localServer) {
+                // Update from server in case device has new IP.
+                await this.device.updateDevice(this.platform.fglair);
+            }
+
+            const localIP = this.config.localIP || this.getIP(this.device.lan_ip || '');
+            if (!localIP) { throw 'Could not find homebridge IP address.'; }
+            const defaultKey = this.hasCurrentTemperature ? PropertyKey.DisplayTemperature : PropertyKey.AdjustTemperature;
+
+
+            this.localServer = new LocalServer(localIP,
+                this.platform.log,
+                defaultKey,
+                this.updateHandler.bind(this),
+                this.errorHandler.bind(this)
+            );
+
+            const lanIP = await this.platform.fglair.getLanIP(this.device);
+            const address = await this.localServer.start(this.device.lan_ip ?? '', lanIP);
+            this.platform.log.debug(`Started server on ${address}. Device IP is: ${this.device.lan_ip}`);
+        } catch (error) {
+            if (!(error instanceof Error)) { return; }
+            this.errorHandler(error);
         }
     }
 
@@ -283,7 +289,7 @@ export class FujitsuHVACPlatformAccessory {
 
     async setTargetTemperature(value: CharacteristicValue) {
         this.currentStates.targetTemperature = value as number;
-        this.localServer.update(PropertyKey.AdjustTemperature, this.currentStates.targetTemperature * 10);
+        this.localServer?.update(PropertyKey.AdjustTemperature, this.currentStates.targetTemperature * 10);
         if (this.hasCurrentTemperature) { return this.updateHCState(); }
         this.currentStates.currentTemperature = value as number;
         this.service?.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentStates.targetTemperature);
@@ -292,36 +298,36 @@ export class FujitsuHVACPlatformAccessory {
     async setTargetHeatingCoolingState(value: CharacteristicValue) {
         this.currentStates.targetHeatingState = value as number;
         const fujitsuValue = this.toFujitsuMode(value as number);
-        this.localServer.update(PropertyKey.OperationMode, fujitsuValue);
+        this.localServer?.update(PropertyKey.OperationMode, fujitsuValue);
     }
 
     async setRotationSpeed(value: CharacteristicValue) {
         this.currentStates.targetRotation = value as number;
         const speed: number = Math.round((value as number) / 33.33);
         if (this.currentStates.fanSpeedAuto) { return; }
-        this.localServer.update(PropertyKey.FanSpeed, speed);
+        this.localServer?.update(PropertyKey.FanSpeed, speed);
     }
 
     async setTargetFanState(value: CharacteristicValue) {
         this.currentStates.targetFanState = value as number;
         const fan_speed = Math.round(this.currentStates.targetRotation / 33.33);
-        this.localServer.update(PropertyKey.FanSpeed, value ? 4 : fan_speed);
+        this.localServer?.update(PropertyKey.FanSpeed, value ? 4 : fan_speed);
     }
 
     async setSwingMode(value: CharacteristicValue) {
         this.currentStates.swinging = value == this.platform.Characteristic.SwingMode.SWING_ENABLED;
 
         if (this.capabilities.swing.horizontal) {
-            this.localServer.update(PropertyKey.HorizontalSwing, value as number);
+            this.localServer?.update(PropertyKey.HorizontalSwing, value as number);
         } else if (this.capabilities.swing.vertical) {
-            this.localServer.update(PropertyKey.VerticalSwing, value as number);
+            this.localServer?.update(PropertyKey.VerticalSwing, value as number);
         }
     }
 
     errorHandler(error: Error) {
         this.platform.log.debug(error.message);
-        this.localServer.stop();
-        this.reload();
+        this.localServer?.stop();
+        this.startLocalServer();
     }
 
     async updateHandler(key: PropertyKey, value: number | string | boolean) {

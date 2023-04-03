@@ -152,8 +152,18 @@ export class Device {
     lng;
     locality;
     properties = {};
+    constructor(json) {
+        Object.assign(this, json);
+    }
     async updateAllProperties(api) {
         this.properties = await api.getProperties(this);
+    }
+    async updateDevice(api) {
+        const device = await api.getDevice(this.dsn);
+        if (!device) {
+            return;
+        }
+        Object.assign(this, device);
     }
     async setProperty(api, propertyKey, value) {
         const property = this.properties[propertyKey];

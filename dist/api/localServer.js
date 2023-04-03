@@ -34,12 +34,28 @@ export class LocalServer {
                     return reject();
                 }
                 this.port = address.port;
+                this.push(false);
                 resolve(`http://${this.localIP}:${this.port}`);
             });
         });
     }
     stop() {
         clearInterval(this.timer);
+    }
+    throttleTimer;
+    clearNetworkError() {
+        clearTimeout(this.throttleTimer);
+        this.throttleTimer = undefined;
+    }
+    networkErrorHandler(error) {
+        if (this.throttleTimer) {
+            return;
+        }
+        this.log.debug("Network request failed. Reconnecting in 5 minutes.");
+        this.throttleTimer = setTimeout(() => {
+            this.throttleTimer = undefined;
+            this.errorHandler(error);
+        }, 300 * 1000);
     }
     async httpHandler(request, response) {
         if (!request.url) {
@@ -74,15 +90,7 @@ export class LocalServer {
         this.sendResponse(response, 200, keyResponse);
         this.stop();
         this.timer = setInterval(async () => {
-            try {
-                await this.push(false);
-            }
-            catch (error) {
-                if (!(error instanceof Error)) {
-                    return;
-                }
-                this.errorHandler(error);
-            }
+            await this.push(false);
         }, keepAlive * 1000);
     }
     handleCommands(response) {
@@ -165,17 +173,21 @@ export class LocalServer {
     async update(key, value) {
         this.valueCache[key] = value;
         this.commandQueue.push({ key, value });
+        await this.push(true);
+    }
+    async push(notify) {
         try {
-            await this.push(true);
+            await this.send(notify);
+            this.clearNetworkError();
         }
         catch (error) {
             if (!(error instanceof Error)) {
                 return;
             }
-            this.errorHandler(error);
+            this.networkErrorHandler(error);
         }
     }
-    async push(notify) {
+    async send(notify) {
         if (!this.port) {
             return;
         }

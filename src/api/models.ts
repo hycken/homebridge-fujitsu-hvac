@@ -195,8 +195,18 @@ export class Device {
     locality: string | undefined
     properties: { [name: string]: Property } = {}
 
+    constructor(json: Device | undefined) {
+        Object.assign(this, json);
+    }
+
     async updateAllProperties(api: FGLAir) {
         this.properties = await api.getProperties(this);
+    }
+
+    async updateDevice(api: FGLAir) {
+        const device = await api.getDevice(this.dsn);
+        if (!device) { return; }
+        Object.assign(this, device);
     }
 
     async setProperty(api: FGLAir, propertyKey: PropertyKey, value: string | number | boolean) {

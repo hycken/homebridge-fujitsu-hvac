@@ -118,7 +118,15 @@ export class FGLAir {
 
         return devices
             .filter(d => d.device !== undefined)
-            .map(d => Object.assign(new Device(), d.device)) as Device[];
+            .map(d => new Device(d.device));
+    }
+
+    async getDevice(dsn: string): Promise<Device | undefined> {
+        const response = await this.request(`dsns/${dsn}.json`)
+        const body = await response?.json();
+        const deviceResponse = body as DeviceResponse;
+        if (!deviceResponse || !deviceResponse.device) { return; }
+        return deviceResponse.device;
     }
 
     async getProperties(device: Device): Promise<{ [name: string]: Property }> {

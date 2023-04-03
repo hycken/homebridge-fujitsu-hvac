@@ -30,30 +30,40 @@ export class FujitsuHVACPlatform {
         this.log.info('Loading accessory from cache:', accessory.displayName);
         this.accessories.push(accessory);
     }
+    networkThrottle;
     async discoverDevices() {
-        const devices = await this.fglair.getDevices();
-        const addedUUIDs = [];
-        for (const device of devices) {
-            this.log.debug('Device Info: ' + JSON.stringify(device, undefined, 2));
-            const uuid = this.api.hap.uuid.generate(device.dsn);
-            await device.updateAllProperties(this.fglair);
-            this.log.debug('Properties: ' + Object.keys(device.properties).join(', '));
-            const device_name = device.getValue('device_name');
-            addedUUIDs.push(uuid);
-            const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
-            if (existingAccessory) {
-                existingAccessory.context.device = device;
-                new FujitsuHVACPlatformAccessory(this, existingAccessory, this.reload.bind(this));
+        try {
+            const devices = await this.fglair.getDevices();
+            const addedUUIDs = [];
+            for (const device of devices) {
+                this.log.debug('Device Info: ' + JSON.stringify(device, undefined, 2));
+                const uuid = this.api.hap.uuid.generate(device.dsn);
+                await device.updateAllProperties(this.fglair);
+                this.log.debug('Properties: ' + Object.keys(device.properties).join(', '));
+                const device_name = device.getValue('device_name');
+                addedUUIDs.push(uuid);
+                const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+                if (existingAccessory) {
+                    existingAccessory.context.device = device;
+                    new FujitsuHVACPlatformAccessory(this, existingAccessory);
+                }
+                else {
+                    const accessory = new this.api.platformAccessory(device_name ?? device.product_name ?? 'Fujitsu', uuid);
+                    accessory.context.device = device;
+                    new FujitsuHVACPlatformAccessory(this, accessory);
+                    this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+                }
             }
-            else {
-                const accessory = new this.api.platformAccessory(device_name ?? device.product_name ?? 'Fujitsu', uuid);
-                accessory.context.device = device;
-                new FujitsuHVACPlatformAccessory(this, accessory, this.reload.bind(this));
-                this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-            }
+            const removedAccessories = this.accessories.filter(accessory => !addedUUIDs.includes(accessory.UUID));
+            this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, removedAccessories);
         }
-        const removedAccessories = this.accessories.filter(accessory => !addedUUIDs.includes(accessory.UUID));
-        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, removedAccessories);
+        catch (error) {
+            clearTimeout(this.networkThrottle);
+            this.networkThrottle = setTimeout(() => {
+                this.log.info('Failed to connect to FGLAir API. Retrying...');
+                this.discoverDevices();
+            }, 300 * 1000);
+        }
     }
     reload() {
         this.log.info("Lost connection to accessory. Rediscovering...");

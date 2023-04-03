@@ -43,6 +43,7 @@ export class LocalServer {
                 const address = this.server.address();
                 if (!(address instanceof Object)) { return reject() }
                 this.port = address.port;
+                this.push(false);
                 resolve(`http://${this.localIP}:${this.port}`);
             });
         });
@@ -50,6 +51,22 @@ export class LocalServer {
 
     stop() {
         clearInterval(this.timer);
+    }
+
+    private throttleTimer?: NodeJS.Timeout
+
+    clearNetworkError() {
+        clearTimeout(this.throttleTimer);
+        this.throttleTimer = undefined;
+    }
+
+    networkErrorHandler(error: Error) {
+        if (this.throttleTimer) { return; }
+        this.log.debug("Network request failed. Reconnecting in 5 minutes.");
+        this.throttleTimer = setTimeout(() => {
+            this.throttleTimer = undefined;
+            this.errorHandler(error);
+        }, 300 * 1000);
     }
 
     async httpHandler(request: http.IncomingMessage, response: http.ServerResponse) {
@@ -86,12 +103,7 @@ export class LocalServer {
         this.sendResponse(response, 200, keyResponse);
         this.stop();
         this.timer = setInterval(async () => {
-            try {
-                await this.push(false);
-            } catch (error) {
-                if (!(error instanceof Error)) { return; }
-                this.errorHandler(error);
-            }
+            await this.push(false);
         }, keepAlive * 1000);
     }
 
@@ -166,15 +178,20 @@ export class LocalServer {
     async update(key: PropertyKey, value: number | string | boolean) {
         this.valueCache[key] = value;
         this.commandQueue.push({ key, value });
+        await this.push(true);
+    }
+
+    async push(notify: boolean) {
         try {
-            await this.push(true);
+            await this.send(notify);
+            this.clearNetworkError();
         } catch (error) {
             if (!(error instanceof Error)) { return; }
-            this.errorHandler(error);
+            this.networkErrorHandler(error);
         }
     }
 
-    async push(notify: boolean): Promise<http.IncomingMessage | undefined> {
+    private async send(notify: boolean): Promise<http.IncomingMessage | undefined> {
         if (!this.port) { return; }
         const body = JSON.stringify({
             local_reg: {

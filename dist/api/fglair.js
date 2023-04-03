@@ -107,7 +107,16 @@ export class FGLAir {
         }
         return devices
             .filter(d => d.device !== undefined)
-            .map(d => Object.assign(new Device(), d.device));
+            .map(d => new Device(d.device));
+    }
+    async getDevice(dsn) {
+        const response = await this.request(`dsns/${dsn}.json`);
+        const body = await response?.json();
+        const deviceResponse = body;
+        if (!deviceResponse || !deviceResponse.device) {
+            return;
+        }
+        return deviceResponse.device;
     }
     async getProperties(device) {
         const response = await this.request('dsns/' + device.dsn + '/properties.json');
