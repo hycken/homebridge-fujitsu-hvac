@@ -175,8 +175,8 @@ export class DeviceResponse {
 }
 
 export class Device {
-    dsn: string = ''
-    product_name: string = 'Product name'
+    dsn = ''
+    product_name = 'Product name'
     model: string | undefined
     oem_model: string | undefined
     sw_version: string | undefined
@@ -228,29 +228,29 @@ export class PropertyResponse {
 }
 
 export class Property {
-    type: string = ''
-    name: string = ''
-    base_type: string = ''
-    read_only: boolean = false
+    type = ''
+    name = ''
+    base_type = ''
+    read_only = false
     direction: string | undefined
     scope: string | undefined
     data_updated_at: string | undefined
-    key: number = -1
-    device_key: number = -1
-    product_name: string = ''
-    track_only_changes: boolean = false
-    display_name: string = ''
-    host_sw_version: boolean = false
-    time_series: boolean = false
-    derived: boolean = false
+    key = -1
+    device_key = -1
+    product_name = ''
+    track_only_changes = false
+    display_name = ''
+    host_sw_version = false
+    time_series = false
+    derived = false
     app_type: string | undefined
     recipe: string | undefined
-    value: any
-    generated_from: string = ''
+    value: string | number | boolean | null = null
+    generated_from = ''
     generated_at: string | null = null
     denied_roles: string[] | null = null
-    ack_enabled: boolean = false
-    retention_days: number = 0
+    ack_enabled = false
+    retention_days = 0
 }
 
 export interface Token {
@@ -260,6 +260,15 @@ export interface Token {
     role: string
     role_tags: string[]
     date?: Date
+}
+
+export interface AuthInfo {
+    email: string;
+    password: string;
+    application: {
+        app_id: string;
+        app_secret: string;
+    };
 }
 
 
@@ -278,9 +287,9 @@ export class LanIPResponse {
 }
 
 export class LanIP {
-    lanip_key_id: number = 0
-    lanip_key: string = ''
-    keep_alive: number = 0
-    auto_sync: number = 0
-    status: string = ''
+    lanip_key_id = 0
+    lanip_key = ''
+    keep_alive = 0
+    auto_sync = 0
+    status = ''
 }

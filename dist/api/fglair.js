@@ -9,7 +9,7 @@ export class FGLAir {
         this.user = user;
     }
     hasExpired(token) {
-        let expireDate = token.date;
+        const expireDate = token.date;
         if (!expireDate) {
             return true;
         }
@@ -41,7 +41,7 @@ export class FGLAir {
         const response = await this.fetch(this.region.authHostname, '/users/' + path, 'POST', {
             'Content-Type': 'application/json'
         }, { user });
-        let json = await response.json();
+        const json = await response.json();
         if (!json.access_token) {
             return;
         }
@@ -49,14 +49,14 @@ export class FGLAir {
         this.token = json;
         return this.token;
     }
+    reset() {
+        this.token = undefined;
+    }
     async request(path, body = undefined) {
-        const start = new Date();
         const token = await this.getToken();
-        const url = 'https://' + this.region.hostname + '/apiv1/' + path;
         if (!token) {
             return;
         }
-        const bodyString = body !== undefined ? JSON.stringify(body) : undefined;
         const method = body !== undefined ? 'POST' : 'GET';
         const result = await this.fetch(this.region.hostname, '/apiv1/' + path, method, {
             'Authorization': 'auth_token ' + token.access_token
@@ -84,12 +84,20 @@ export class FGLAir {
                 method,
                 headers: allHeaders
             }, r => {
-                let response = r;
+                const response = r;
                 let data = '';
                 response.json = async () => {
                     return new Promise((resolve, reject) => {
                         r.on('data', d => { data += d; });
-                        r.on('end', () => { resolve(JSON.parse(data)); });
+                        r.on('end', () => {
+                            try {
+                                const json = JSON.parse(data);
+                                resolve(json);
+                            }
+                            catch {
+                                reject(new Error(`Failed to parse JSON: "${data}"`));
+                            }
+                        });
                     });
                 };
                 resolve(response);
@@ -100,8 +108,7 @@ export class FGLAir {
     }
     async getDevices() {
         const response = await this.request('devices.json');
-        const body = await response?.json();
-        const devices = body;
+        const devices = await response?.json();
         if (!devices || devices.length == 0) {
             return [];
         }
@@ -111,8 +118,7 @@ export class FGLAir {
     }
     async getDevice(dsn) {
         const response = await this.request(`dsns/${dsn}.json`);
-        const body = await response?.json();
-        const deviceResponse = body;
+        const deviceResponse = await response?.json();
         if (!deviceResponse || !deviceResponse.device) {
             return;
         }
@@ -120,16 +126,15 @@ export class FGLAir {
     }
     async getProperties(device) {
         const response = await this.request('dsns/' + device.dsn + '/properties.json');
-        const body = await response?.json();
-        const properties = body;
+        const properties = await response?.json();
         if (!properties || !properties.length) {
             return {};
         }
-        let list = properties
+        const list = properties
             .filter(p => p.property !== undefined)
             .map(p => p.property);
         return list.reduce((prev, item) => {
-            let result = prev;
+            const result = prev;
             result[item.display_name] = item;
             return result;
         }, {});
@@ -138,11 +143,14 @@ export class FGLAir {
         const response = await this.request('properties/' + property.key + '/datapoints.json', {
             'datapoint': { value }
         });
-        const body = await response?.json();
+        await response?.json();
     }
     async getLanIP(device) {
         const response = await this.request('dsns/' + device.dsn + '/lan.json');
-        const body = await response?.json();
+        if (!response) {
+            return;
+        }
+        const body = await response.json();
         if (!('lanip' in body)) {
             return;
         }

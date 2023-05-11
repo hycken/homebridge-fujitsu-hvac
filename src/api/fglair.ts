@@ -1,9 +1,9 @@
 import https from 'https';
 import { IncomingMessage, OutgoingHttpHeaders } from 'http'
-import { Region, Device, Property, Token, User, DeviceResponse, PropertyResponse, LanIP, LanIPResponse } from './models.js'
+import { Region, Device, Property, Token, User, DeviceResponse, PropertyResponse, LanIP, LanIPResponse, AuthInfo } from './models.js'
 
-interface Response extends IncomingMessage {
-    json: () => Object
+interface Response<T> extends IncomingMessage {
+    json: () => Promise<T>
 }
 
 export class FGLAir {
@@ -17,7 +17,7 @@ export class FGLAir {
     }
 
     private hasExpired(token: Token): boolean {
-        let expireDate = token.date
+        const expireDate = token.date
         if (!expireDate) { return true; }
         expireDate.setSeconds(expireDate.getSeconds() + token.expires_in);
         return expireDate < new Date();
@@ -27,8 +27,8 @@ export class FGLAir {
         if (this.token !== undefined && !this.hasExpired(this.token)) {
             return this.token;
         }
-        let path: string
-        let user: Object
+        let path: string;
+        let user: Token | AuthInfo;
         if (this.token) {
             path = 'refresh_token.json';
             user = this.token;
@@ -48,32 +48,32 @@ export class FGLAir {
         const response = await this.fetch(this.region.authHostname, '/users/' + path, 'POST', {
             'Content-Type': 'application/json'
         }, { user });
-        let json = await response.json() as Token;
+        const json = await response.json() as Token;
         if (!json.access_token) { return; }
 
         json.date = requestedAt;
         this.token = json;
         return this.token;
-
     }
 
-    async request(path: string, body: object | undefined = undefined): Promise<Response | undefined> {
-        const start = new Date();
+    reset() {
+        this.token = undefined;
+    }
+
+    async request<T>(path: string, body: object | undefined = undefined): Promise<Response<T> | undefined> {
         const token = await this.getToken();
-        const url = 'https://' + this.region.hostname + '/apiv1/' + path;
         if (!token) { return; }
 
-        const bodyString = body !== undefined ? JSON.stringify(body) : undefined;
         const method = body !== undefined ? 'POST' : 'GET';
 
-        const result = await this.fetch(this.region.hostname, '/apiv1/' + path, method, {
+        const result = await this.fetch<T>(this.region.hostname, '/apiv1/' + path, method, {
             'Authorization': 'auth_token ' + token.access_token
         }, body);
         return result;
     }
 
-    async fetch(hostname: string, path: string, method: string, headers: OutgoingHttpHeaders, body: Object | undefined = undefined): Promise<Response> {
-        return new Promise<Response>((resolve, reject) => {
+    async fetch<T>(hostname: string, path: string, method: string, headers: OutgoingHttpHeaders, body: unknown | undefined = undefined): Promise<Response<T>> {
+        return new Promise<Response<T>>((resolve, reject) => {
             let json: string
             let allHeaders = Object.assign({}, headers, {
                 'Content-Type': 'application/json'
@@ -93,12 +93,19 @@ export class FGLAir {
                 method,
                 headers: allHeaders
             }, r => {
-                let response = r as Response
+                const response = r as Response<T>;
                 let data = '';
                 response.json = async () => {
                     return new Promise((resolve, reject) => {
                         r.on('data', d => { data += d; });
-                        r.on('end', () => { resolve(JSON.parse(data)); });
+                        r.on('end', () => {
+                            try {
+                                const json = JSON.parse(data);
+                                resolve(json);
+                            } catch {
+                                reject(new Error(`Failed to parse JSON: "${data}"`));
+                            }
+                        });
                     })
                 }
                 resolve(response);
@@ -110,9 +117,8 @@ export class FGLAir {
 
 
     async getDevices(): Promise<Device[]> {
-        const response = await this.request('devices.json');
-        const body = await response?.json();
-        const devices = body as DeviceResponse[];
+        const response = await this.request<DeviceResponse[]>('devices.json');
+        const devices = await response?.json();
 
         if (!devices || devices.length == 0) { return []; }
 
@@ -122,26 +128,25 @@ export class FGLAir {
     }
 
     async getDevice(dsn: string): Promise<Device | undefined> {
-        const response = await this.request(`dsns/${dsn}.json`)
-        const body = await response?.json();
-        const deviceResponse = body as DeviceResponse;
+        const response = await this.request<DeviceResponse>(`dsns/${dsn}.json`)
+        const deviceResponse = await response?.json();
+
         if (!deviceResponse || !deviceResponse.device) { return; }
         return deviceResponse.device;
     }
 
     async getProperties(device: Device): Promise<{ [name: string]: Property }> {
-        const response = await this.request('dsns/' + device.dsn + '/properties.json');
-        const body = await response?.json();
-        const properties = body as PropertyResponse[];
+        const response = await this.request<PropertyResponse[]>('dsns/' + device.dsn + '/properties.json');
+        const properties = await response?.json();
         if (!properties || !properties.length) {
             return {};
         }
-        let list = properties
+        const list = properties
             .filter(p => p.property !== undefined)
             .map(p => p.property) as Property[];
 
         return list.reduce((prev: { [name: string]: Property }, item: Property) => {
-            let result = prev
+            const result = prev
             result[item.display_name] = item;
             return result;
         }, {});
@@ -151,12 +156,14 @@ export class FGLAir {
         const response = await this.request('properties/' + property.key + '/datapoints.json', {
             'datapoint': { value }
         });
-        const body = await response?.json();
+        await response?.json();
     }
 
     async getLanIP(device: Device): Promise<LanIP | undefined> {
-        const response = await this.request('dsns/' + device.dsn + '/lan.json');
-        const body = await response?.json() as LanIPResponse;
+        const response = await this.request<LanIPResponse>('dsns/' + device.dsn + '/lan.json');
+        if (!response) { return; }
+        const body = await response.json();
+
         if (!('lanip' in body)) { return; }
         return body.lanip;
     }

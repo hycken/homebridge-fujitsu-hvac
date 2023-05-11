@@ -2,7 +2,7 @@ import crypto, { BinaryLike } from 'crypto'
 import { PropertyKey } from './models.js'
 
 export class Datapoint {
-    seq_no: number = 0
+    seq_no = 0
     data: {
         name: string,
         value: number
@@ -61,11 +61,11 @@ export class PropertyUpdate {
 
 
 export class KeyRequest {
-    ver: string = ''
-    random_1: string = ''
-    time_1: number = 0
-    proto: number = 0
-    key_id: number = 0
+    ver = ''
+    random_1 = ''
+    time_1 = 0
+    proto = 0
+    key_id = 0
 }
 
 export class KeyRespone {
@@ -146,18 +146,22 @@ export class KeyExchange {
     }
 
     decrypt<T>(message: string): T | undefined {
-        const body = JSON.parse(message) as EncodedBody;
-        if (!body.enc) { return; }
+        try {
+            const body = JSON.parse(message) as EncodedBody;
+            if (!body.enc) { return; }
 
-        const decrypted = this.decrypter.update(body.enc, 'base64')
-            .toString('utf8')
-            .replace(/^\0+/, '')
-            .replace(/\0+$/, '');
-        return JSON.parse(decrypted) as T;
+            const decrypted = this.decrypter.update(body.enc, 'base64')
+                .toString('utf8')
+                .replace(/^\0+/, '')
+                .replace(/\0+$/, '');
+            return JSON.parse(decrypted) as T;
+        } catch {
+            return undefined;
+        }
     }
 
     zeroPad(message: string, bufferSize: number): Buffer {
-        var padLength = message.length;
+        let padLength = message.length;
         if (message.length % bufferSize > 0) {
             padLength += bufferSize - message.length % bufferSize;
         }

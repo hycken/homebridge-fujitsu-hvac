@@ -202,7 +202,7 @@ export class Property {
     derived = false;
     app_type;
     recipe;
-    value;
+    value = null;
     generated_from = '';
     generated_at = null;
     denied_roles = null;

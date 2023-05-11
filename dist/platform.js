@@ -27,7 +27,6 @@ export class FujitsuHVACPlatform {
         });
     }
     configureAccessory(accessory) {
-        this.log.info('Loading accessory from cache:', accessory.displayName);
         this.accessories.push(accessory);
     }
     networkThrottle;
@@ -58,8 +57,17 @@ export class FujitsuHVACPlatform {
             this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, removedAccessories);
         }
         catch (error) {
+            if (error instanceof Error) {
+                this.log.debug(error.message);
+                this.log.debug(error.stack ?? '');
+            }
+            else {
+                this.log.debug('Not Error');
+                this.log.debug(JSON.stringify(error, undefined, 4));
+            }
             clearTimeout(this.networkThrottle);
             this.networkThrottle = setTimeout(() => {
+                this.fglair.reset();
                 this.log.info('Failed to connect to FGLAir API. Retrying...');
                 this.discoverDevices();
             }, 300 * 1000);

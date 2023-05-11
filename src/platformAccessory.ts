@@ -75,7 +75,9 @@ export class FujitsuHVACPlatformAccessory {
 
         this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
             .onGet(async () => this.currentStates.currentTemperature);
-
+        this.service.getCharacteristic(this.platform.Characteristic.On)
+            .onGet(async () => false)
+            .onSet(async () => undefined);
 
         this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature)
             .setProps({ minStep: 0.5 })
@@ -182,6 +184,8 @@ export class FujitsuHVACPlatformAccessory {
         try {
             if (this.localServer) {
                 // Update from server in case device has new IP.
+                this.platform.fglair.reset();
+
                 await this.device.updateDevice(this.platform.fglair);
             }
 
@@ -208,7 +212,7 @@ export class FujitsuHVACPlatformAccessory {
 
     loadState() {
         for (const property of Object.values(this.device.properties)) {
-            if (isNaN(property.value)) { continue; }
+            if (property.value == null || (typeof property.value === 'number' && isNaN(property.value))) { continue; }
             this.updateHandler(property.name as PropertyKey, property.value);
         }
     }

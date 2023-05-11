@@ -101,18 +101,23 @@ export class KeyExchange {
         };
     }
     decrypt(message) {
-        const body = JSON.parse(message);
-        if (!body.enc) {
-            return;
+        try {
+            const body = JSON.parse(message);
+            if (!body.enc) {
+                return;
+            }
+            const decrypted = this.decrypter.update(body.enc, 'base64')
+                .toString('utf8')
+                .replace(/^\0+/, '')
+                .replace(/\0+$/, '');
+            return JSON.parse(decrypted);
         }
-        const decrypted = this.decrypter.update(body.enc, 'base64')
-            .toString('utf8')
-            .replace(/^\0+/, '')
-            .replace(/\0+$/, '');
-        return JSON.parse(decrypted);
+        catch {
+            return undefined;
+        }
     }
     zeroPad(message, bufferSize) {
-        var padLength = message.length;
+        let padLength = message.length;
         if (message.length % bufferSize > 0) {
             padLength += bufferSize - message.length % bufferSize;
         }

@@ -1,27 +1,27 @@
-import { FGLAir } from "./fglair";
 import http from 'http';
 import { PropertyKey, LanIP } from './models.js';
 import { KeyRequestResponse, KeyExchange, KeyRespone, Command, Datapoint, PropertyUpdate } from './serverModels.js';
 
 interface ILogger {
-    info(message: string, ...parameters: any[]): void;
-    warn(message: string, ...parameters: any[]): void;
-    error(message: string, ...parameters: any[]): void;
-    debug(message: string, ...parameters: any[]): void;
+    info(message: string, ...parameters: unknown[]): void;
+    warn(message: string, ...parameters: unknown[]): void;
+    error(message: string, ...parameters: unknown[]): void;
+    debug(message: string, ...parameters: unknown[]): void;
 }
 
 
 export class LocalServer {
-    server: http.Server
-    port?: number
-    hostname: string = ''
-    lanip?: LanIP
-    keyExchange?: KeyExchange
-    command = 0
-    requestNumber = 0
-    timer?: NodeJS.Timer
+    server: http.Server;
+    port?: number;
+    hostname = '';
+    lanip?: LanIP;
+    keyExchange?: KeyExchange;
+    command = 0;
+    requestNumber = 0;
+    timer?: NodeJS.Timer;
+    running = false;
 
-    valueCache: { [key: string]: number | string | boolean } = {}
+    valueCache: { [key: string]: number | string | boolean } = {};
     commandQueue: { key: PropertyKey, value: number | string | boolean }[] = [];
 
     constructor(
@@ -35,9 +35,9 @@ export class LocalServer {
     }
 
     async start(deviceIP: string, lanIP?: LanIP): Promise<string> {
+        this.running = true;
         this.hostname = deviceIP;
         this.lanip = lanIP;
-
         return new Promise((resolve, reject) => {
             this.server.listen(0, this.localIP, () => {
                 const address = this.server.address();
@@ -50,7 +50,9 @@ export class LocalServer {
     }
 
     stop() {
+        this.running = false;
         clearInterval(this.timer);
+        clearTimeout(this.throttleTimer);
     }
 
     private throttleTimer?: NodeJS.Timeout
@@ -61,7 +63,7 @@ export class LocalServer {
     }
 
     networkErrorHandler(error: Error) {
-        if (this.throttleTimer) { return; }
+        if (!this.running || this.throttleTimer) { return; }
         this.log.debug("Network request failed. Reconnecting in 5 minutes.");
         this.throttleTimer = setTimeout(() => {
             this.throttleTimer = undefined;
@@ -75,18 +77,24 @@ export class LocalServer {
 
         // Remove any get parameters 
         const path = request.url.split('?')[0];
-        switch (path) {
-            case '/local_lan/key_exchange.json':
-                return this.handleKeyExchange(response, body);
-            case '/local_lan/commands.json':
-                return this.handleCommands(response);
-            case '/local_lan/property/datapoint.json':
-                return this.handleDataPoint(response, body);
-            case '/local_lan/time.json':
-                return this.handleTime(response, body);
-            default:
-                this.log.warn(`Unhandled URL: ${request.url}`);
-                this.sendResponse(response, 404);
+        try {
+            switch (path) {
+                case '/local_lan/key_exchange.json':
+                    return this.handleKeyExchange(response, body);
+                case '/local_lan/commands.json':
+                    return this.handleCommands(response);
+                case '/local_lan/property/datapoint.json':
+                    return this.handleDataPoint(response, body);
+                // case '/local_lan/time.json':
+                //     return this.handleTime(response, body);
+                default:
+                    this.log.warn(`Unhandled URL: ${request.url}`);
+                    this.sendResponse(response, 404);
+            }
+        } catch (error: unknown) {
+            if (!(error instanceof Error)) { return; }
+            this.log.error(`${path}: ${error.message}`);
+            this.log.debug(body);
         }
     }
 
@@ -101,14 +109,15 @@ export class LocalServer {
         const keyResponse = new KeyRespone();
         this.keyExchange = new KeyExchange(this.lanip.lanip_key, keyRequest.key_exchange, keyResponse);
         this.sendResponse(response, 200, keyResponse);
-        this.stop();
+        clearInterval(this.timer);
+        clearTimeout(this.throttleTimer);
         this.timer = setInterval(async () => {
             await this.push(false);
         }, keepAlive * 1000);
     }
 
     handleCommands(response: http.ServerResponse) {
-        let data: Object
+        let data: Command | PropertyUpdate;
         if (!this.lanip || !this.keyExchange) { return this.sendResponse(response, 500); }
         const command = this.commandQueue.shift();
         if (!command) { // Nothing enqueued, ask for default key.
@@ -124,32 +133,18 @@ export class LocalServer {
         this.sendResponse(response, 200, encryptedData);
     }
 
-    handleTime(response: http.ServerResponse, body: string) {
-        this.sendResponse(response, 200);
-        try {
-            const point = this.keyExchange?.decrypt(body) as Datapoint;
-            if (!('data' in point)) { return this.sendResponse(response, 200); }
-        } catch (error: any) {
-            if (!error || typeof error.message != 'string') { return }
-            this.log.error(error.message);
-        }
-    }
-
     handleDataPoint(response: http.ServerResponse, body: string) {
-        try {
-            const point = this.keyExchange?.decrypt(body) as Datapoint;
-            if (!('data' in point)) { return this.sendResponse(response, 200); }
-            this.log.debug(`#${point.seq_no}: ${point.data.name}: ${point.data.value}`);
-            this.sendResponse(response, 200);
-
-            if (this.valueCache[point.data.name] === point.data.value) { return; }
-            this.valueCache[point.data.name] = point.data.value;
-            this.handler(point.data.name as PropertyKey, point.data.value);
-        } catch (error: any) {
-            this.sendResponse(response, 200);
-            if (!error || typeof error.message != 'string') { return; }
-            this.log.error(error.message);
+        const point = this.keyExchange?.decrypt(body) as Datapoint;
+        if (!point || !('data' in point)) {
+            this.keyExchange = undefined;
+            return this.sendResponse(response, 200);
         }
+        this.log.debug(`#${point.seq_no}: ${point.data.name}: ${point.data.value}`);
+        this.sendResponse(response, 200);
+
+        if (this.valueCache[point.data.name] === point.data.value) { return; }
+        this.valueCache[point.data.name] = point.data.value;
+        this.handler(point.data.name as PropertyKey, point.data.value);
     }
 
     async getBody(request: http.IncomingMessage): Promise<string> {
