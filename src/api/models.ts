@@ -229,7 +229,7 @@ export class PropertyResponse {
 
 export class Property {
     type = ''
-    name = ''
+    name?: PropertyKey
     base_type = ''
     read_only = false
     direction: string | undefined

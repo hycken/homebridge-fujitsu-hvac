@@ -186,7 +186,7 @@ export class PropertyResponse {
 }
 export class Property {
     type = '';
-    name = '';
+    name;
     base_type = '';
     read_only = false;
     direction;
