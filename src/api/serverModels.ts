@@ -114,8 +114,8 @@ export class KeyExchange {
     decryptSet: KeySet
 
 
-    decrypter: crypto.Decipher
-    encrypter: crypto.Cipher
+    decrypter: crypto.Decipheriv
+    encrypter: crypto.Cipheriv
 
     constructor(lanIPKey: string, request: KeyRequest, response: KeyRespone) {
         const encryptBase = request.random_1 + response.random_2 + request.time_1 + response.time_2;

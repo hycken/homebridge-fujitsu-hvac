@@ -18,7 +18,7 @@ export class LocalServer {
     keyExchange?: KeyExchange;
     command = 0;
     requestNumber = 0;
-    timer?: NodeJS.Timer;
+    timer?: NodeJS.Timeout;
     running = false;
 
     valueCache: { [key: string]: number | string | boolean } = {};
