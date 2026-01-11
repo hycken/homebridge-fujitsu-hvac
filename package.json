@@ -3,7 +3,7 @@
   "type": "module",
   "displayName": "Homebridgee Fujitsu HVAC",
   "name": "homebridge-fujitsu-hvac",
-  "version": "1.4.1",
+  "version": "1.4.3",
   "description": "Plugin for Fujistu heat pumps and mini splits supported by FGLAir.",
   "license": "MIT",
   "repository": {
@@ -14,7 +14,7 @@
     "url": "https://github.com/hycken/homebridge-fujitsu-hvac/issues"
   },
   "engines": {
-    "node": "^18.15.0 || ^20.7.0 || ^22",
+    "node": "^18.15.0 || ^20.7.0 || ^22 || ^24",
     "homebridge": "^1.6.0 || ^2.0.0-beta.0"
   },
   "main": "dist/index.js",
@@ -29,19 +29,19 @@
     "fglair"
   ],
   "devDependencies": {
-    "@babel/preset-typescript": "^7.27.1",
-    "@eslint/eslintrc": "^3.3.1",
-    "@eslint/js": "^9.38.0",
+    "@babel/preset-typescript": "^7.28.5",
+    "@eslint/eslintrc": "^3.3.3",
+    "@eslint/js": "^9.39.2",
     "@types/node": "^24.8.1",
-    "eslint": "^9.38.0",
+    "eslint": "^9.39.2",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
-    "homebridge": "^2.0.0-beta.20",
-    "nodemon": "^3.1.10",
-    "rimraf": "^6.0.1",
+    "homebridge": "^2.0.0-beta.68",
+    "nodemon": "^3.1.11",
+    "rimraf": "^6.1.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.1"
+    "typescript-eslint": "^8.52.0"
   },
   "homepage": "https://github.com/hycken/homebridge-fujitsu-hvac#readme",
   "author": "Daniel Hyckenberg"
